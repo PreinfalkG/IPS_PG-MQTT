@@ -1,0 +1,13 @@
+{
+    "id": "{B1E1B6E2-4F0A-4C7B-9E75-1A2B3C4D5E6F}",
+    "name": "MQTT Generic Mapper",
+    "type": 3,
+    "vendor": "PreinfalkG",
+    "aliases": [],    
+    "constants": [],
+    "parentRequirements": [],
+    "childRequirements": [],
+    "implemented": [],
+    "prefix": "MQTTMAP",
+    "url": ""
+}

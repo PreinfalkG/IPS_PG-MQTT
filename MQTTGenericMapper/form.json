@@ -1,0 +1,232 @@
+{
+    "elements": [
+        {
+            "type": "Label",
+            "caption": "MQTT-Server oder MQTT-Client, an den die automatisch erzeugten nativen MQTT-Geräte angeschlossen werden sollen (dieselbe Instanz, die auch der native Konfigurator verwendet)."
+        },
+        {
+            "type": "SelectInstance",
+            "name": "MQTTServerID",
+            "caption": "MQTT-Server / -Client"
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "1) Themen entdecken (optional, spart Tipparbeit)",
+            "items": [
+                {
+                    "type": "Label",
+                    "caption": "Fragt die Themen ab, die der oben gewählte MQTT-Server/-Client bereits gesehen hat (best-effort - falls hier nichts erscheint, einfach Themen manuell unten eintragen oder aus dem nativen MQTT-Konfigurator kopieren)."
+                },
+                {
+                    "type": "Button",
+                    "caption": "Themen vom MQTT-Server/-Client abfragen",
+                    "onClick": "MQTTMAP_RefreshDiscoveredTopics($id);"
+                },
+                {
+                    "type": "List",
+                    "name": "DiscoveredList",
+                    "caption": "Erkannte Themen",
+                    "rowCount": 10,
+                    "add": false,
+                    "delete": false,
+                    "columns": [
+                        {
+                            "caption": "Topic",
+                            "name": "Topic",
+                            "width": "420px"
+                        },
+                        {
+                            "caption": "Letzter Payload",
+                            "name": "Payload",
+                            "width": "220px"
+                        },
+                        {
+                            "caption": "Zuletzt gesehen",
+                            "name": "LastSeen",
+                            "width": "160px"
+                        }
+                    ],
+                    "values": []
+                },
+                {
+                    "type": "RowLayout",
+                    "items": [
+                        {
+                            "type": "Button",
+                            "caption": "Ausgewählte Themen übernehmen",
+                            "onClick": "MQTTMAP_AddSelectedTopics($id, $DiscoveredList);"
+                        },
+                        {
+                            "type": "Button",
+                            "caption": "Alle erkannten Themen übernehmen",
+                            "onClick": "MQTTMAP_AddAllDiscoveredTopics($id);"
+                        },
+                        {
+                            "type": "Button",
+                            "caption": "Liste erkannter Themen leeren",
+                            "onClick": "MQTTMAP_ClearDiscovered($id);"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "List",
+            "name": "Mappings",
+            "caption": "2) Topic → Variablen Mapping",
+            "rowCount": 20,
+            "add": true,
+            "delete": true,
+            "columns": [
+                {
+                    "caption": "Aktiv",
+                    "name": "Active",
+                    "width": "50px",
+                    "add": true,
+                    "edit": {
+                        "type": "CheckBox"
+                    }
+                },
+                {
+                    "caption": "MQTT Topic",
+                    "name": "Topic",
+                    "width": "320px",
+                    "add": "",
+                    "edit": {
+                        "type": "ValidationTextBox"
+                    }
+                },
+                {
+                    "caption": "Ident",
+                    "name": "Ident",
+                    "width": "140px",
+                    "add": "",
+                    "edit": {
+                        "type": "ValidationTextBox"
+                    }
+                },
+                {
+                    "caption": "Name",
+                    "name": "Name",
+                    "width": "180px",
+                    "add": "",
+                    "edit": {
+                        "type": "ValidationTextBox"
+                    }
+                },
+                {
+                    "caption": "Typ",
+                    "name": "VarType",
+                    "width": "100px",
+                    "add": 3,
+                    "edit": {
+                        "type": "Select",
+                        "options": [
+                            { "caption": "Boolean", "value": 0 },
+                            { "caption": "Integer", "value": 1 },
+                            { "caption": "Float",   "value": 2 },
+                            { "caption": "String",  "value": 3 }
+                        ]
+                    }
+                },
+                {
+                    "caption": "Variablenprofil",
+                    "name": "Profile",
+                    "width": "150px",
+                    "add": "",
+                    "edit": {
+                        "type": "ValidationTextBox"
+                    }
+                },
+                {
+                    "caption": "Position",
+                    "name": "Position",
+                    "width": "80px",
+                    "add": 0,
+                    "edit": {
+                        "type": "NumberSpinner"
+                    }
+                },
+                {
+                    "caption": "Konvertierung",
+                    "name": "Convert",
+                    "width": "150px",
+                    "add": "none",
+                    "edit": {
+                        "type": "Select",
+                        "options": [
+                            { "caption": "Keine (1:1 nach Typ)",             "value": "none" },
+                            { "caption": "Datum/Zeit-String → UnixTimestamp", "value": "unixts" },
+                            { "caption": "Text-Status → Integer (Tabelle)",  "value": "enum" }
+                        ]
+                    }
+                },
+                {
+                    "caption": "Datumsformat (bei Bedarf)",
+                    "name": "DateFormat",
+                    "width": "170px",
+                    "add": "",
+                    "edit": {
+                        "type": "ValidationTextBox"
+                    }
+                },
+                {
+                    "caption": "Textwert=Zahl;...",
+                    "name": "EnumMap",
+                    "width": "200px",
+                    "add": "",
+                    "edit": {
+                        "type": "ValidationTextBox"
+                    }
+                }
+            ],
+            "values": []
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "3) Hinweise zur Konvertierung",
+            "items": [
+                {
+                    "type": "Label",
+                    "caption": "Datum/Zeit → UnixTimestamp: Datumsformat leer lassen für automatische Erkennung (deckt ISO 8601 u.ä. ab), oder ein PHP-Datumsformat angeben, z.B. Y-m-d\\TH:i:sP. Zielvariable wird automatisch als Integer mit Profil ~UnixTimestamp angelegt."
+                },
+                {
+                    "type": "Label",
+                    "caption": "Text-Status → Integer: In 'Textwert=Zahl;...' die Zuordnung eintragen, z.B. Bulk=0;Absorption=1;Float=2;Inverting=9. Passend dazu ein eigenes Integer-Variablenprofil mit Assoziationen anlegen und im Feld 'Variablenprofil' eintragen. Unbekannte Textwerte ergeben -1."
+                }
+            ]
+        },
+        {
+            "type": "ExpansionPanel",
+            "caption": "4) Konfiguration importieren / exportieren (JSON)",
+            "items": [
+                {
+                    "type": "ValidationTextBox",
+                    "name": "ExportBox",
+                    "caption": "Export (zum Kopieren, z.B. als Backup oder zum Teilen)",
+                    "width": "650px",
+                    "multiline": true
+                },
+                {
+                    "type": "Button",
+                    "caption": "Aktuelle Mapping-Liste hier ausgeben",
+                    "onClick": "MQTTMAP_DoExport($id);"
+                },
+                {
+                    "type": "ValidationTextBox",
+                    "name": "ImportBox",
+                    "caption": "Import (JSON hier einfügen und übernehmen)",
+                    "width": "650px",
+                    "multiline": true
+                },
+                {
+                    "type": "Button",
+                    "caption": "Eingefügtes JSON importieren (ersetzt aktuelles Mapping)",
+                    "onClick": "MQTTMAP_DoImport($id, $ImportBox);",
+                    "confirm": "Das aktuelle Mapping wird durch den importierten Inhalt ersetzt. Fortfahren?"
+                }
+            ]
+        }
+    ],
+    "status": []
+}

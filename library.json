@@ -1,0 +1,12 @@
+{
+    "id": "{9C2E7B1A-4F35-4E2C-8B7A-2D6F0C5E9A11}",
+    "name": "IPS_PG-MQTT",
+    "author": "PreinfalkG",
+    "url": "",
+    "compatibility": {
+        "version": "8.1"
+    },
+    "version": "0.90",
+    "build": 20260823,
+    "date": 1787508025
+}
