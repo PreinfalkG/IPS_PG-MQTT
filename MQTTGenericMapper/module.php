@@ -4,19 +4,24 @@ declare(strict_types=1);
 
 class MQTTGenericMapper extends IPSModule
 {
-    // Bestätigt über: IPS_GetModule(IPS_GetInstance($mqttServerID)['ModuleInfo']['ModuleID'])
+    // Bestaetigt ueber: IPS_GetModule(IPS_GetInstance($mqttServerID)['ModuleInfo']['ModuleID'])
     // Native MQTT-Server-Instanz (Modul-ID {C6D2AEB3-6E1F-4B2E-8E69-3A1A00246850}):
     //   - "Implemented"       => ["{7A1272A4-...}", "{043EA491-...}"]  -> das braucht UNSER "parentRequirements"
     //   - "ChildRequirements" => ["{7F7632D9-...}"]                    -> das braucht UNSER "implemented"
-    // (bestätigt gegen ein produktiv laufendes, veröffentlichtes MQTT-Modul mit identischer Kombination)
     private const IF_MQTT_SERVER      = '{7F7632D9-FA40-4F38-8DEA-C83CD4325A32}';
     private const MODULE_MQTT_SERVER  = '{C6D2AEB3-6E1F-4B2E-8E69-3A1A00246850}';
+
+    // Parser-Enum fuer die Mapping-Tabelle
+    private const PARSER_NONE               = 0; // Rohwert gemaess VarType
+    private const PARSER_STRING_TO_INT      = 1; // erste Zahl aus dem String extrahieren
+    private const PARSER_DATETIME_TO_STAMP  = 2; // Datum/Zeit-String -> Unix-Timestamp (Integer)
 
     public function Create()
     {
         parent::Create();
 
         $this->RegisterPropertyBoolean('DiscoverMode', false);
+        $this->RegisterPropertyBoolean('DebugMode', false);
         $this->RegisterPropertyString('Mappings', '[]');
         $this->RegisterPropertyString('BaseFilter', '.*');
 
@@ -38,6 +43,7 @@ class MQTTGenericMapper extends IPSModule
         // unabhaengig davon in ReceiveData() anhand der Mapping-Liste.
         $filter = $this->ReadPropertyString('BaseFilter');
         $this->SetReceiveDataFilter($filter === '' ? '.*' : $filter);
+        $this->debug('ApplyChanges: ReceiveDataFilter gesetzt auf "' . ($filter === '' ? '.*' : $filter) . '"');
 
         // Fuer alle aktiven Mappings die Zielvariable sicherstellen, auch bevor der erste
         // Payload eintrifft (z.B. gleich nach dem Anlegen sichtbar).
@@ -59,17 +65,32 @@ class MQTTGenericMapper extends IPSModule
         $payload = isset($data->Payload) ? (string) $data->Payload : '';
 
         if ($this->ReadPropertyBoolean('DiscoverMode')) {
+            $this->debug('Lernmodus: speichere Topic "' . $topic . '"');
             $this->rememberDiscoveredTopic($topic, $payload);
             return;
         }
 
-        foreach ($this->getMappings() as $mapping) {
+        $mappings = $this->getMappings();
+
+        foreach ($mappings as $mapping) {
             if (!($mapping['Active'] ?? true)) {
                 continue;
             }
-            if ($this->topicMatches($mapping['Topic'], $topic)) {
+            if (!$this->topicMatches($mapping['Topic'], $topic)) {
+                continue;
+            }
+
+            $this->debug('Match: "' . $topic . '" -> Mapping "' . $mapping['Topic'] . '", Payload: "' . $payload . '"');
+
+            try {
                 $varID = $this->ensureVariable($mapping);
-                $this->applyPayload($varID, (int) $mapping['VarType'], $payload);
+                $varType = (int) $mapping['VarType'];
+                $parser  = (int) ($mapping['Parser'] ?? self::PARSER_NONE);
+                $value   = $this->parsePayload($payload, $parser, $varType);
+                $this->applyPayload($varID, $varType, $value);
+                $this->debug('-> Variable ' . $varID . ' gesetzt auf: ' . var_export($value, true));
+            } catch (Exception $e) {
+                $this->debug('FEHLER bei Mapping "' . $mapping['Topic'] . '": ' . $e->getMessage());
             }
         }
     }
@@ -78,12 +99,14 @@ class MQTTGenericMapper extends IPSModule
     // Oeffentliche Funktionen, die vom Konfigurationsformular aufgerufen werden
     // ---------------------------------------------------------------
 
-    public function AddSelectedTopics(array $SelectedRows)
+    public function AddSelectedTopics($SelectedRows)
     {
+        $rows     = $this->toArray($SelectedRows);
         $mappings = $this->getMappings();
         $existing = array_column($mappings, 'Topic');
 
-        foreach ($SelectedRows as $row) {
+        foreach ($rows as $row) {
+            $row = $this->toArray($row);
             if (!isset($row['Topic']) || in_array($row['Topic'], $existing, true)) {
                 continue;
             }
@@ -91,6 +114,7 @@ class MQTTGenericMapper extends IPSModule
             $existing[] = $row['Topic'];
         }
 
+        $this->debug('AddSelectedTopics: ' . count($rows) . ' Zeile(n) uebergeben, Mapping-Liste jetzt ' . count($mappings) . ' Eintrag/Eintraege');
         $this->saveMappings($mappings);
         $this->ReloadForm();
     }
@@ -109,6 +133,7 @@ class MQTTGenericMapper extends IPSModule
             $existing[] = $entry['Topic'];
         }
 
+        $this->debug('AddAllDiscoveredTopics: Mapping-Liste jetzt ' . count($mappings) . ' Eintrag/Eintraege');
         $this->saveMappings($mappings);
         $this->ReloadForm();
     }
@@ -143,6 +168,7 @@ class MQTTGenericMapper extends IPSModule
             $clean[] = array_merge($this->buildMappingFromTopic($row['Topic']), $row);
         }
 
+        $this->debug('DoImport: ' . count($clean) . ' Eintrag/Eintraege importiert');
         $this->saveMappings($clean);
         $this->ReloadForm();
     }
@@ -163,6 +189,34 @@ class MQTTGenericMapper extends IPSModule
     // ---------------------------------------------------------------
     // Interne Hilfsfunktionen
     // ---------------------------------------------------------------
+
+    /**
+     * Loggt nur, wenn "Debug-Meldungen aktiv" im Formular angehakt ist.
+     * Landet im Debug-Panel der Instanz (Konsole -> Instanz -> "Debug"), nicht im globalen Meldungslog.
+     */
+    private function debug(string $message): void
+    {
+        if ($this->ReadPropertyBoolean('DebugMode')) {
+            $this->SendDebug('MQTTMAP', $message, 0);
+        }
+    }
+
+    /**
+     * Normalisiert IPSList-Objekte, stdClass-Objekte etc. zu einem echten PHP-Array,
+     * da IP-Symcon Formular-Rueckgaben nicht immer als array liefert.
+     */
+    private function toArray($value): array
+    {
+        if (is_array($value)) {
+            return $value;
+        }
+        if (is_object($value)) {
+            // funktioniert fuer stdClass, IPSList und aehnliche iterierbare/JSON-serialisierbare Objekte
+            $decoded = json_decode(json_encode($value), true);
+            return is_array($decoded) ? $decoded : [];
+        }
+        return [];
+    }
 
     private function injectListValues(array &$elements, string $name, array $values): bool
     {
@@ -201,6 +255,7 @@ class MQTTGenericMapper extends IPSModule
             'Ident'    => $this->topicToIdent($topic),
             'Name'     => str_replace(['_', '-'], ' ', $lastSegment),
             'VarType'  => 3, // String als sicherer Default, danach in der Tabelle anpassbar
+            'Parser'   => self::PARSER_NONE,
             'Profile'  => '',
             'Position' => 0
         ];
@@ -285,21 +340,51 @@ class MQTTGenericMapper extends IPSModule
         return $varID;
     }
 
-    private function applyPayload(int $varID, int $varType, string $payload): void
+    /**
+     * Wandelt den rohen Payload-String gemaess gewaehltem Parser in den Zielwert um.
+     * PARSER_NONE faellt auf die bisherige, VarType-basierte einfache Umwandlung zurueck.
+     */
+    private function parsePayload(string $payload, int $parser, int $varType)
+    {
+        switch ($parser) {
+            case self::PARSER_STRING_TO_INT:
+                if (preg_match('/-?\d+/', $payload, $matches)) {
+                    return (int) $matches[0];
+                }
+                return 0;
+
+            case self::PARSER_DATETIME_TO_STAMP:
+                $timestamp = strtotime($payload);
+                return $timestamp !== false ? $timestamp : 0;
+
+            default:
+                switch ($varType) {
+                    case 0:
+                        return in_array(strtolower(trim($payload)), ['true', '1', 'on', 'yes'], true);
+                    case 1:
+                        return (int) $payload;
+                    case 2:
+                        return (float) str_replace(',', '.', $payload);
+                    default:
+                        return $payload;
+                }
+        }
+    }
+
+    private function applyPayload(int $varID, int $varType, $value): void
     {
         switch ($varType) {
-            case 0: // Boolean
-                $value = in_array(strtolower(trim($payload)), ['true', '1', 'on', 'yes'], true);
-                SetValueBoolean($varID, $value);
+            case 0:
+                SetValueBoolean($varID, (bool) $value);
                 break;
-            case 1: // Integer
-                SetValueInteger($varID, (int) $payload);
+            case 1:
+                SetValueInteger($varID, (int) $value);
                 break;
-            case 2: // Float
-                SetValueFloat($varID, (float) str_replace(',', '.', $payload));
+            case 2:
+                SetValueFloat($varID, (float) $value);
                 break;
-            default: // String
-                SetValueString($varID, $payload);
+            default:
+                SetValueString($varID, (string) $value);
         }
     }
 }

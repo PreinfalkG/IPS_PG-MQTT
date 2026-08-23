@@ -1,6 +1,11 @@
 {
     "elements": [
         {
+            "type": "CheckBox",
+            "name": "DebugMode",
+            "caption": "Debug-Meldungen aktiv (sichtbar im Debug-Panel dieser Instanz)"
+        },
+        {
             "type": "ExpansionPanel",
             "caption": "1) Topics entdecken (optional, spart Tipparbeit)",
             "items": [
@@ -60,6 +65,10 @@
                     ]
                 }
             ]
+        },
+        {
+            "type": "Label",
+            "caption": "Hinweis zu Parser + Typ: Bei 'Datum/Zeit -> Unix-Timestamp' bzw. 'String -> Ganzzahl' zusätzlich den Typ auf 'Integer' stellen. Bei 'Keine (Rohwert)' entscheidet allein der Typ über die einfache Umwandlung (z.B. \"true\"/\"1\" -> Boolean)."
         },
         {
             "type": "List",
@@ -128,6 +137,29 @@
                             {
                                 "caption": "String",
                                 "value": 3
+                            }
+                        ]
+                    }
+                },
+                {
+                    "caption": "Parser",
+                    "name": "Parser",
+                    "width": "180px",
+                    "add": 0,
+                    "edit": {
+                        "type": "Select",
+                        "options": [
+                            {
+                                "caption": "Keine (Rohwert)",
+                                "value": 0
+                            },
+                            {
+                                "caption": "String -> Ganzzahl",
+                                "value": 1
+                            },
+                            {
+                                "caption": "Datum/Zeit -> Unix-Timestamp",
+                                "value": 2
                             }
                         ]
                     }
