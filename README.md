@@ -92,6 +92,82 @@ Optionaler Regex-Vorfilter (`ReceiveDataFilter`) für Broker mit sehr vielen
 Topics. Die eigentliche Zuordnung läuft davon unabhängig immer über die
 Mapping-Liste.
 
+
+Der Regex im "ReceiveDataFilter" wird gegen die komplette rohe JSON-Zeile geprüft (also `{"DataID":"...","Topic":"...","Payload":"...",...}`), nicht nur gegen das Topic selbst – deshalb muss das Pattern den `"Topic":"..."`-Teil mit einschließen. Wichtig: Da IP-Symcon intern `/` als Regex-Delimiter verwendet, müssen literale Schrägstriche im Pattern als `\/` maskiert werden.
+
+**Fall 1 – Topic beginnt mit `carconnectivity/0/garage/VSSZZZK1ZNP005104/`:**
+```
+.*"Topic":"carconnectivity\/0\/garage\/VSSZZZK1ZNP005104\/.*
+```
+
+**Fall 2 – Topic enthält `/garage/` irgendwo:**
+```
+.*"Topic":"[^"]*\/garage\/[^"]*"
+```
+
+Kurz erklärt:
+- `.*"Topic":"` – irgendwas davor, dann öffnendes Anführungszeichen des Topic-Werts
+- Fall 1: der feste Präfix, danach `.*` für den Rest (kein Zeilenende-Anker nötig, da Präfix-Match reicht)
+- Fall 2: `[^"]*` = "beliebig viele Zeichen außer Anführungszeichen" davor und danach, damit `/garage/` an beliebiger Stelle im Topic gefunden wird, ohne über das schließende `"` hinauszulaufen
+
+**Zwei Dinge zu beachten:**
+
+1. Dieser Filter wirkt auf **Transportebene für alles**, auch für den Lernmodus – d. h. im Lernmodus würdest du mit Fall 1 dann nur noch Topics eures VW/Cupra-Fahrzeugs zum Entdecken sehen, nicht mehr die anderen `carconnectivity`-Topics (Connector-Status etc.). Falls du zum Entdecken breiter filtern willst als für den späteren Dauerbetrieb, einfach den Filter während der Discovery-Phase auf `.*` lassen und erst danach einengen.
+
+2. Falls ihr mehrere Fahrzeuge/Bereiche gleichzeitig abdecken wollt, lassen sich mehrere Muster per `|` kombinieren, z. B.:
+```
+.*"Topic":"(carconnectivity\/0\/garage\/VSSZZZK1ZNP005104\/.*|.*\/garage\/.*)"
+```
+
+Am besten nach dem Setzen kurz mit Debug-Meldungen aktiv testen (die vorhandene `debug()`-Ausgabe in `ApplyChanges()` bestätigt euch den tatsächlich aktiven Filter-String), damit ihr seht, dass noch die erwarteten Topics durchkommen.
+
+Beispiel Victron
+Für Victron mit variabler Geräte-Instanznummer in der Mitte des Topics gibt's zwei Stellen, wo du das eintragen kannst – je nachdem, was du erreichen willst:
+
+## A) Im Mapping-Tabellen-Feld "MQTT Topic" (empfohlen)
+
+Dort unterstützt das Modul schon die MQTT-Standard-Wildcards `+` (genau ein Segment) und `#` (Rest-Pfad) – das ist der natürlichere Ort für genau euren Anwendungsfall, weil ihr damit **eine einzige Mapping-Zeile** für alle Solarcharger-Instanzen bekommt, statt für jede Instanznummer eine eigene:
+
+**Fall 1** – beliebige Solarcharger-Instanz, `Pv/V`:
+```
+N/c0619ab82e3c/solarcharger/+/Pv/V
+```
+
+**Fall 2** – alles unter `grid` (beliebige Instanz + beliebiger Rest-Pfad):
+```
+N/c0619ab82e3c/grid/#
+```
+
+## B) Im "ReceiveDataFilter" (Performance-Vorfilter)
+
+Falls ihr zusätzlich auf Transportebene einschränken wollt (z. B. weil der Victron-Broker hunderte Topics hat und ihr nur Solarcharger/Grid überhaupt an die Instanz durchlassen wollt), braucht's echten Regex gegen die rohe JSON-Zeile, `/` maskiert:
+
+**Fall 1:**
+```
+.*"Topic":"N\/c0619ab82e3c\/solarcharger\/[^\/]+\/Pv\/V"
+```
+`[^\/]+` = "ein beliebiges Segment ohne weiteren Schrägstrich" – entspricht dem MQTT-`+`.
+
+**Fall 2:**
+```
+.*"Topic":"N\/c0619ab82e3c\/grid\/.*
+```
+
+**Kombiniert (beides gleichzeitig durchlassen):**
+```
+.*"Topic":"N\/c0619ab82e3c\/(solarcharger\/[^\/]+\/Pv\/V|grid\/.*)
+```
+
+## Praktischer Tipp für euren Fall
+
+Da ihr vermutlich mehrere Solarcharger-Instanzen (290, 291, ...) habt und alle auf dieselbe Variable abbilden wollt (oder pro Instanz eine eigene?) – überlegt euch das kurz:
+
+- **Eine Variable für alle Instanzen** (letzter Wert gewinnt, überschreibt sich gegenseitig) → Mapping-Zeile mit `+`-Wildcard wie oben reicht.
+- **Eine Variable pro Instanz** (z. B. `SolarCharger_290_V`, `SolarCharger_291_V`) → braucht pro Instanznummer eine eigene Mapping-Zeile mit exaktem Topic, da der `Ident` sonst kollidieren würde. Dafür wäre der Lernmodus + "Ausgewählte Topics übernehmen" der schnellste Weg, weil dort jede tatsächlich gesehene Instanznummer einzeln als eigene Zeile auftaucht.
+
+Was passt eher zu eurem Setup – wollt ihr die Solarcharger einzeln oder aggregiert sehen?
+
+
 ## Bekannte Grenzen
 
 - Reines Auslesen (Broker → Symcon-Variable), kein Rückschreiben. Ließe sich

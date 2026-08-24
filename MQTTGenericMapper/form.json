@@ -11,7 +11,7 @@
             "items": [
                 {
                     "type": "Label",
-                    "caption": "Lernmodus einschalten, Änderungen übernehmen, ein paar Sekunden/Minuten warten (bis eure Topics einmal gesendet wurden), Formular neu öffnen. Danach unten gewünschte Topics auswählen und übernehmen."
+                    "caption": "Lernmodus einschalten, Änderungen übernehmen, ein paar Sekunden/Minuten warten (bis neue Topics einmal gesendet wurden), Formular neu öffnen. Danach unten gewünschte Topics auswählen und übernehmen."
                 },
                 {
                     "type": "CheckBox",
@@ -38,12 +38,12 @@
                         {
                             "caption": "Topic",
                             "name": "Topic",
-                            "width": "400px"
+                            "width": "850px"
                         },
                         {
                             "caption": "Letzter Payload",
                             "name": "Payload",
-                            "width": "220px"
+                            "width": "380px"
                         },
                         {
                             "caption": "Zuletzt gesehen",
@@ -115,7 +115,7 @@
                 {
                     "caption": "MQTT Topic",
                     "name": "Topic",
-                    "width": "360px",
+                    "width": "640px",
                     "add": "",
                     "edit": {
                         "type": "ValidationTextBox"
@@ -240,25 +240,65 @@
             "caption": "3) Konfiguration importieren / exportieren (JSON)",
             "items": [
                 {
-                    "type": "ScriptEditor",
-                    "name": "ExportBox",
-                    "caption": "Export (zum Kopieren, z.B. als Backup oder zum Teilen)"
-                },
-                {
-                    "type": "Button",
-                    "caption": "Aktuelle Mapping-Liste hier ausgeben",
-                    "onClick": "MQTTMAP_DoExport($id);"
-                },
-                {
-                    "type": "ScriptEditor",
-                    "name": "ImportBox",
-                    "caption": "Import (JSON hier einfügen und übernehmen)"
-                },
-                {
-                    "type": "Button",
-                    "caption": "Eingefügtes JSON importieren (ersetzt aktuelles Mapping)",
-                    "onClick": "MQTTMAP_DoImport($id, $ImportBox);",
-                    "confirm": "Das aktuelle Mapping wird durch den importierten Inhalt ersetzt. Fortfahren?"
+                    "type": "RowLayout",
+                    "items": [
+                        {
+                            "type": "ColumnLayout",
+                            "items": [
+                                {
+                                    "type": "ScriptEditor",
+                                    "name": "ExportBox",
+                                    "value": "[]",
+                                    "width": "6400px",
+                                    "rowCount": 18,
+                                    "caption": "Export (zum Kopieren, z.B. als Backup oder zum Teilen)"
+                                },
+                                {
+                                    "type": "Button",
+                                    "caption": "Aktuelle Mapping-Liste hier ausgeben",
+                                    "width": "600px",
+                                    "onClick": "MQTTMAP_DoExport($id);"
+                                },
+                                {
+                                     "type": "Label", 
+                                     "caption": "",
+                                     "width": "800px"
+                                }
+                            ]
+                        },
+                        {
+
+                                     "type": "Label", 
+                                     "caption": "",
+                                     "width": "60px"
+
+                        },
+                        {
+                            "type": "ColumnLayout",
+                            "items": [
+                                {
+                                    "type": "ScriptEditor",
+                                    "name": "ImportBox",
+                                    "value": "[]",
+                                    "width": "640px",
+                                    "rowCount": 18,
+                                    "caption": "Import (JSON hier einfügen und übernehmen)"
+                                },
+                                {
+                                    "type": "Button",
+                                    "caption": "Eingefügtes JSON importieren (ersetzt aktuelles Mapping)",
+                                    "width": "600px",
+                                    "onClick": "MQTTMAP_DoImport($id, $ImportBox);",
+                                    "confirm": "Das aktuelle Mapping wird durch den importierten Inhalt ersetzt. Fortfahren?"
+                                },
+                                {
+                                     "type": "Label", 
+                                     "caption": "",
+                                     "width": "800px"
+                                }
+                            ]
+                        }
+                    ]
                 }
             ]
         },
@@ -268,7 +308,7 @@
             "items": [
                 {
                     "type": "Label",
-                    "caption": "Bei sehr vielen Topics (z.B. Victron: mehrere hundert) kann hier serverseitig vorgefiltert werden, welche Topics diese Instanz überhaupt zu sehen bekommt. Standard '.*' lässt alles durch, die eigentliche Zuordnung passiert danach anhand der Mapping-Liste oben."
+                    "caption": "Bei sehr vielen Topics (z.B. Victron) kann hier serverseitig vorgefiltert werden, welche Topics diese Instanz überhaupt zu sehen bekommt. Standard '.*' lässt alles durch, die eigentliche Zuordnung passiert danach anhand der Mapping-Liste oben."
                 },
                 {
                     "type": "ValidationTextBox",
