@@ -498,7 +498,8 @@ class MQTTGenericMapper extends IPSModule
                 SetValueBoolean($varID, (bool) $value);
                 break;
             case 1:
-                SetValueInteger($varID, is_scalar($value) ? (int) $value : 0);
+                //SetValueInteger($varID, is_scalar($value) ? (int) $value : 0);
+                SetValueInteger($varID, is_scalar($value) ? (int) round((float) $value) : 0);
                 break;
             case 2:
                 SetValueFloat($varID, is_scalar($value) ? (float) $value : 0.0);

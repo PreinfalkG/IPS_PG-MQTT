@@ -97,7 +97,7 @@
         },
         {
             "type": "Label",
-            "caption": "• Dauer H:MM:SS.ffffff -> Sekunden: für Intervall-/Dauer-Strings wie \"0:05:06.932660\" (z.B. Python timedelta). Parser-Parameter bleibt leer. Typ auf Float stellen."
+            "caption": "• Dauer H:MM:SS.ffffff -> Sekunden: für Intervall-/Dauer-Strings wie \"0:05:06.932660\" (z.B. Python timedelta). Parser-Parameter bleibt leer. Typ auf Integer stellen."
         },
         {
             "type": "List",
