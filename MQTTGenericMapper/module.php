@@ -5,16 +5,17 @@ declare(strict_types=1);
 class MQTTGenericMapper extends IPSModule
 {
     // Bestaetigt ueber: IPS_GetModule(IPS_GetInstance($mqttServerID)['ModuleInfo']['ModuleID'])
-    // Native MQTT-Server-Instanz (Modul-ID {C6D2AEB3-6E1F-4B2E-8E69-3A1A00246850}):
-    //   - "Implemented"       => ["{7A1272A4-...}", "{043EA491-...}"]  -> das braucht UNSER "parentRequirements"
-    //   - "ChildRequirements" => ["{7F7632D9-...}"]                    -> das braucht UNSER "implemented"
     private const IF_MQTT_SERVER      = '{7F7632D9-FA40-4F38-8DEA-C83CD4325A32}';
     private const MODULE_MQTT_SERVER  = '{C6D2AEB3-6E1F-4B2E-8E69-3A1A00246850}';
 
     // Parser-Enum fuer die Mapping-Tabelle
-    private const PARSER_NONE               = 0; // Rohwert gemaess VarType
-    private const PARSER_STRING_TO_INT      = 1; // erste Zahl aus dem String extrahieren
-    private const PARSER_DATETIME_TO_STAMP  = 2; // Datum/Zeit-String -> Unix-Timestamp (Integer)
+    private const PARSER_NONE      = 0; // Rohwert gemaess VarType
+    private const PARSER_NUMBER    = 1; // erste Zahl (auch Dezimal) aus dem String extrahieren
+    private const PARSER_DATETIME  = 2; // Datum/Zeit-String -> Unix-Timestamp (Integer)
+    private const PARSER_ENUM      = 3; // Text -> Zahl, ueber ParserParam gepflegt, Auto-Erweiterung
+    private const PARSER_JSONPATH  = 4; // Feld aus einem JSON-Payload extrahieren (Punkt-Pfad)
+    private const PARSER_SCALE     = 5; // numerischer Rohwert * Faktor + Offset
+    private const PARSER_MS_TO_S   = 6; // Unix-Millisekunden -> Sekunden
 
     public function Create()
     {
@@ -25,13 +26,8 @@ class MQTTGenericMapper extends IPSModule
         $this->RegisterPropertyString('Mappings', '[]');
         $this->RegisterPropertyString('BaseFilter', '.*');
 
-        // Cache fuer im Lernmodus gesehene Topics. Als Attribute (nicht Property), damit er
-        // Neustarts uebersteht, aber nicht als "geaenderte Konfiguration" markiert wird.
         $this->RegisterAttributeString('DiscoveredTopicsCache', '[]');
 
-        // Standardmaessig an den nativen MQTT-Server haengen (legt bei Bedarf automatisch eine
-        // passende Instanz an bzw. verbindet mit einer vorhandenen). Kann im Instanzbaum
-        // ("Gateway aendern") jederzeit umgestellt werden.
         $this->ConnectParent(self::MODULE_MQTT_SERVER);
     }
 
@@ -39,14 +35,10 @@ class MQTTGenericMapper extends IPSModule
     {
         parent::ApplyChanges();
 
-        // Serverseitiger Vorfilter (Performance). Die eigentliche, exakte Zuordnung erfolgt
-        // unabhaengig davon in ReceiveData() anhand der Mapping-Liste.
         $filter = $this->ReadPropertyString('BaseFilter');
         $this->SetReceiveDataFilter($filter === '' ? '.*' : $filter);
         $this->debug('ApplyChanges: ReceiveDataFilter gesetzt auf "' . ($filter === '' ? '.*' : $filter) . '"');
 
-        // Fuer alle aktiven Mappings die Zielvariable sicherstellen, auch bevor der erste
-        // Payload eintrifft (z.B. gleich nach dem Anlegen sichtbar).
         foreach ($this->getMappings() as $mapping) {
             if ($mapping['Active'] ?? true) {
                 $this->ensureVariable($mapping);
@@ -58,7 +50,7 @@ class MQTTGenericMapper extends IPSModule
     {
         $data = json_decode($JSONString);
         if ($data === null || !isset($data->Topic)) {
-            return; // z.B. CONNECT/SUBACK-Pakete ohne Topic ignorieren
+            return;
         }
 
         $topic   = (string) $data->Topic;
@@ -72,7 +64,7 @@ class MQTTGenericMapper extends IPSModule
 
         $mappings = $this->getMappings();
 
-        foreach ($mappings as $mapping) {
+        foreach ($mappings as $index => $mapping) {
             if (!($mapping['Active'] ?? true)) {
                 continue;
             }
@@ -83,10 +75,18 @@ class MQTTGenericMapper extends IPSModule
             $this->debug('Match: "' . $topic . '" -> Mapping "' . $mapping['Topic'] . '", Payload: "' . $payload . '"');
 
             try {
-                $varID = $this->ensureVariable($mapping);
-                $varType = (int) $mapping['VarType'];
-                $parser  = (int) ($mapping['Parser'] ?? self::PARSER_NONE);
-                $value   = $this->parsePayload($payload, $parser, $varType);
+                $varID       = $this->ensureVariable($mapping);
+                $varType     = (int) $mapping['VarType'];
+                $parser      = (int) ($mapping['Parser'] ?? self::PARSER_NONE);
+                $parserParam = (string) ($mapping['ParserParam'] ?? '');
+
+                if ($parser === self::PARSER_ENUM) {
+                    // Sonderfall: kann die Mapping-Liste persistent erweitern (neuer Enum-Wert)
+                    $value = $this->resolveEnumAndMaybeExtend($mappings, $index, $payload);
+                } else {
+                    $value = $this->parsePayload($payload, $parser, $varType, $parserParam);
+                }
+
                 $this->applyPayload($varID, $varType, $value);
                 $this->debug('-> Variable ' . $varID . ' gesetzt auf: ' . var_export($value, true));
             } catch (Exception $e) {
@@ -159,7 +159,6 @@ class MQTTGenericMapper extends IPSModule
             return;
         }
 
-        // Minimal-Validierung + Defaults ergaenzen, falls Felder fehlen
         $clean = [];
         foreach ($decoded as $row) {
             if (!isset($row['Topic']) || $row['Topic'] === '') {
@@ -178,7 +177,6 @@ class MQTTGenericMapper extends IPSModule
         $form = json_decode(file_get_contents(__DIR__ . '/form.json'), true);
 
         $discovered = json_decode($this->ReadAttributeString('DiscoveredTopicsCache'), true) ?: [];
-        // Neueste zuerst anzeigen
         usort($discovered, fn ($a, $b) => strcmp($b['LastSeen'], $a['LastSeen']));
 
         $this->injectListValues($form['elements'], 'DiscoveredList', $discovered);
@@ -190,10 +188,6 @@ class MQTTGenericMapper extends IPSModule
     // Interne Hilfsfunktionen
     // ---------------------------------------------------------------
 
-    /**
-     * Loggt nur, wenn "Debug-Meldungen aktiv" im Formular angehakt ist.
-     * Landet im Debug-Panel der Instanz (Konsole -> Instanz -> "Debug"), nicht im globalen Meldungslog.
-     */
     private function debug(string $message): void
     {
         if ($this->ReadPropertyBoolean('DebugMode')) {
@@ -201,17 +195,12 @@ class MQTTGenericMapper extends IPSModule
         }
     }
 
-    /**
-     * Normalisiert IPSList-Objekte, stdClass-Objekte etc. zu einem echten PHP-Array,
-     * da IP-Symcon Formular-Rueckgaben nicht immer als array liefert.
-     */
     private function toArray($value): array
     {
         if (is_array($value)) {
             return $value;
         }
         if (is_object($value)) {
-            // funktioniert fuer stdClass, IPSList und aehnliche iterierbare/JSON-serialisierbare Objekte
             $decoded = json_decode(json_encode($value), true);
             return is_array($decoded) ? $decoded : [];
         }
@@ -250,14 +239,15 @@ class MQTTGenericMapper extends IPSModule
         $lastSegment = end($segments) ?: $topic;
 
         return [
-            'Active'   => true,
-            'Topic'    => $topic,
-            'Ident'    => $this->topicToIdent($topic),
-            'Name'     => str_replace(['_', '-'], ' ', $lastSegment),
-            'VarType'  => 3, // String als sicherer Default, danach in der Tabelle anpassbar
-            'Parser'   => self::PARSER_NONE,
-            'Profile'  => '',
-            'Position' => 0
+            'Active'      => true,
+            'Topic'       => $topic,
+            'Ident'       => $this->topicToIdent($topic),
+            'Name'        => str_replace(['_', '-'], ' ', $lastSegment),
+            'VarType'     => 3, // String als sicherer Default, danach in der Tabelle anpassbar
+            'Parser'      => self::PARSER_NONE,
+            'ParserParam' => '',
+            'Profile'     => '',
+            'Position'    => 0
         ];
     }
 
@@ -265,17 +255,12 @@ class MQTTGenericMapper extends IPSModule
     {
         $ident = preg_replace('/[^A-Za-z0-9_]/', '_', $topic);
         $ident = trim($ident, '_');
-        // Idents duerfen in IP-Symcon nicht mit einer Ziffer beginnen
         if ($ident === '' || ctype_digit($ident[0])) {
             $ident = 'T_' . $ident;
         }
         return $ident;
     }
 
-    /**
-     * Wandelt ein Mapping-Topic-Pattern in einen PHP-Regex um.
-     * Unterstuetzt MQTT-Wildcards: '#' (beliebiger Rest-Pfad) und '+' (genau ein Segment).
-     */
     private function topicToRegex(string $pattern): string
     {
         $quoted = preg_quote($pattern, '/');
@@ -296,7 +281,6 @@ class MQTTGenericMapper extends IPSModule
             $cache = [];
         }
 
-        // Topic als Schluessel nutzen, um Duplikate zu vermeiden und den letzten Stand zu behalten
         $indexed = [];
         foreach ($cache as $entry) {
             $indexed[$entry['Topic']] = $entry;
@@ -308,7 +292,6 @@ class MQTTGenericMapper extends IPSModule
             'LastSeen' => date('Y-m-d H:i:s')
         ];
 
-        // Auf eine sinnvolle Menge begrenzen (aelteste zuerst raus), auch bei hunderten Victron-Topics genug
         if (count($indexed) > 2000) {
             $indexed = array_slice($indexed, -2000, null, true);
         }
@@ -342,22 +325,41 @@ class MQTTGenericMapper extends IPSModule
 
     /**
      * Wandelt den rohen Payload-String gemaess gewaehltem Parser in den Zielwert um.
-     * PARSER_NONE faellt auf die bisherige, VarType-basierte einfache Umwandlung zurueck.
+     * (PARSER_ENUM wird separat in resolveEnumAndMaybeExtend() behandelt, da es die
+     * Mapping-Liste persistent erweitern kann.)
      */
-    private function parsePayload(string $payload, int $parser, int $varType)
+    private function parsePayload(string $payload, int $parser, int $varType, string $parserParam)
     {
         switch ($parser) {
-            case self::PARSER_STRING_TO_INT:
-                if (preg_match('/-?\d+/', $payload, $matches)) {
-                    return (int) $matches[0];
+            case self::PARSER_NUMBER:
+                if (preg_match('/-?\d+(\.\d+)?/', $payload, $matches)) {
+                    return (float) $matches[0];
                 }
                 return 0;
 
-            case self::PARSER_DATETIME_TO_STAMP:
+            case self::PARSER_DATETIME:
+                if ($parserParam !== '') {
+                    $dt = DateTime::createFromFormat($parserParam, $payload);
+                    if ($dt !== false) {
+                        return $dt->getTimestamp();
+                    }
+                    // Format passte nicht -> Fallback auf automatische Erkennung
+                }
                 $timestamp = strtotime($payload);
                 return $timestamp !== false ? $timestamp : 0;
 
-            default:
+            case self::PARSER_JSONPATH:
+                $decoded = json_decode($payload, true);
+                return $this->extractJsonPath($decoded, $parserParam);
+
+            case self::PARSER_SCALE:
+                [$factor, $offset] = $this->parseScaleParam($parserParam);
+                return ((float) str_replace(',', '.', $payload)) * $factor + $offset;
+
+            case self::PARSER_MS_TO_S:
+                return intdiv((int) $payload, 1000);
+
+            default: // PARSER_NONE
                 switch ($varType) {
                     case 0:
                         return in_array(strtolower(trim($payload)), ['true', '1', 'on', 'yes'], true);
@@ -371,6 +373,92 @@ class MQTTGenericMapper extends IPSModule
         }
     }
 
+    /**
+     * Enum-Zuordnung: ParserParam enthaelt "Label=Zahl"-Paare, getrennt durch Komma oder Zeilenumbruch,
+     * z.B. "Offline=0,Online=1,undefined=-1". Unbekannte Labels werden automatisch mit der naechsten
+     * freien Zahl ergaenzt und in die Mapping-Liste zurueckgeschrieben.
+     */
+    private function resolveEnumAndMaybeExtend(array $mappings, int $index, string $rawPayload): int
+    {
+        $label = trim($rawPayload);
+        $map   = $this->parseEnumMap($mappings[$index]['ParserParam'] ?? '');
+
+        if (array_key_exists($label, $map)) {
+            return $map[$label];
+        }
+
+        $nextValue = empty($map) ? 0 : (max($map) + 1);
+        $map[$label] = $nextValue;
+
+        $mappings[$index]['ParserParam'] = $this->encodeEnumMap($map);
+        $this->debug('Enum-Map "' . $mappings[$index]['Topic'] . '": neuer Wert "' . $label . '" -> ' . $nextValue . ' automatisch ergaenzt');
+        $this->saveMappings($mappings);
+
+        return $nextValue;
+    }
+
+    private function parseEnumMap(string $raw): array
+    {
+        $map = [];
+        foreach (preg_split('/[\n,]+/', $raw) as $part) {
+            $part = trim($part);
+            if ($part === '' || strpos($part, '=') === false) {
+                continue;
+            }
+            [$label, $value] = array_map('trim', explode('=', $part, 2));
+            if ($label !== '' && is_numeric($value)) {
+                $map[$label] = (int) $value;
+            }
+        }
+        return $map;
+    }
+
+    private function encodeEnumMap(array $map): string
+    {
+        $parts = [];
+        foreach ($map as $label => $value) {
+            $parts[] = $label . '=' . $value;
+        }
+        return implode(',', $parts);
+    }
+
+    /**
+     * Extrahiert einen Wert aus einem dekodierten JSON-Payload anhand eines Punkt-Pfads,
+     * z.B. "battery.soc" oder "devices.0.voltage" (numerische Segmente = Array-Index).
+     */
+    private function extractJsonPath($data, string $path)
+    {
+        if ($path === '') {
+            return is_string($data) ? $data : json_encode($data);
+        }
+
+        $current = $data;
+        foreach (explode('.', $path) as $segment) {
+            if (is_array($current) && array_key_exists($segment, $current)) {
+                $current = $current[$segment];
+            } else {
+                return null;
+            }
+        }
+
+        return is_array($current) ? json_encode($current) : $current;
+    }
+
+    /**
+     * ParserParam fuer PARSER_SCALE: "Faktor,Offset", z.B. "0.1,0" oder nur "0.1" (Offset dann 0).
+     */
+    private function parseScaleParam(string $raw): array
+    {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return [1.0, 0.0];
+        }
+        $parts  = array_map('trim', explode(',', $raw));
+        $factor = isset($parts[0]) && is_numeric($parts[0]) ? (float) $parts[0] : 1.0;
+        $offset = isset($parts[1]) && is_numeric($parts[1]) ? (float) $parts[1] : 0.0;
+        return [$factor, $offset];
+    }
+
     private function applyPayload(int $varID, int $varType, $value): void
     {
         switch ($varType) {
@@ -378,13 +466,13 @@ class MQTTGenericMapper extends IPSModule
                 SetValueBoolean($varID, (bool) $value);
                 break;
             case 1:
-                SetValueInteger($varID, (int) $value);
+                SetValueInteger($varID, is_scalar($value) ? (int) $value : 0);
                 break;
             case 2:
-                SetValueFloat($varID, (float) $value);
+                SetValueFloat($varID, is_scalar($value) ? (float) $value : 0.0);
                 break;
             default:
-                SetValueString($varID, (string) $value);
+                SetValueString($varID, is_array($value) ? json_encode($value) : (string) $value);
         }
     }
 }

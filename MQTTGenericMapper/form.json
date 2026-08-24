@@ -68,7 +68,23 @@
         },
         {
             "type": "Label",
-            "caption": "Hinweis zu Parser + Typ: Bei 'Datum/Zeit -> Unix-Timestamp' bzw. 'String -> Ganzzahl' zusätzlich den Typ auf 'Integer' stellen. Bei 'Keine (Rohwert)' entscheidet allein der Typ über die einfache Umwandlung (z.B. \"true\"/\"1\" -> Boolean)."
+            "caption": "Parser-Parameter je nach gewähltem Parser (Feld bei 'Keine' und 'Zahl aus Text' leer lassen):"
+        },
+        {
+            "type": "Label",
+            "caption": "• Datum/Zeit: optionaler PHP-Formatstring, z.B. \"Y-m-d H:i:s\" oder \"d.m.Y H:i\" (leer = automatische Erkennung). Typ auf Integer stellen, Profil ~UnixTimestamp empfohlen."
+        },
+        {
+            "type": "Label",
+            "caption": "• Enum-Zuordnung: \"Label=Zahl\" Paare, per Komma oder Zeile getrennt, z.B. \"Offline=0,Online=1,undefined=-1\". Unbekannte Werte werden automatisch ergänzt. Typ auf Integer stellen."
+        },
+        {
+            "type": "Label",
+            "caption": "• JSON-Feld extrahieren: Punkt-Pfad in den JSON-Payload, z.B. \"battery.soc\" oder \"devices.0.voltage\"."
+        },
+        {
+            "type": "Label",
+            "caption": "• Skalierung: \"Faktor,Offset\", z.B. \"0.1,0\" wandelt einen Rohwert von 235 in 23.5 um. Typ auf Float stellen."
         },
         {
             "type": "List",
@@ -144,7 +160,7 @@
                 {
                     "caption": "Parser",
                     "name": "Parser",
-                    "width": "180px",
+                    "width": "190px",
                     "add": 0,
                     "edit": {
                         "type": "Select",
@@ -154,14 +170,39 @@
                                 "value": 0
                             },
                             {
-                                "caption": "String -> Ganzzahl",
+                                "caption": "Zahl aus Text extrahieren",
                                 "value": 1
                             },
                             {
                                 "caption": "Datum/Zeit -> Unix-Timestamp",
                                 "value": 2
+                            },
+                            {
+                                "caption": "Enum-Zuordnung (Text -> Zahl)",
+                                "value": 3
+                            },
+                            {
+                                "caption": "JSON-Feld extrahieren",
+                                "value": 4
+                            },
+                            {
+                                "caption": "Skalierung (Faktor/Offset)",
+                                "value": 5
+                            },
+                            {
+                                "caption": "Millisekunden -> Sekunden",
+                                "value": 6
                             }
                         ]
+                    }
+                },
+                {
+                    "caption": "Parser-Parameter",
+                    "name": "ParserParam",
+                    "width": "260px",
+                    "add": "",
+                    "edit": {
+                        "type": "ValidationTextBox"
                     }
                 },
                 {

@@ -1,85 +1,102 @@
-# MQTT Generic Mapper – IP-Symcon Modul (v2)
+# MQTT Generic Mapper – IP-Symcon Modul
 
-Bildet beliebige MQTT-Topics auf frei konfigurierbare Variablen ab, ohne dass
-ihr für jedes Topic manuell im Konfigurator klicken müsst. Eine Instanz dieses
-Moduls kann beliebig viele Topics (z.B. alle Victron-Topics) auf eigene,
-sauber benannte Variablen mappen – inklusive optionaler Konvertierung von
-String-Zeitstempeln in UnixTimestamp und von String-Status in Integer.
+Bildet beliebige MQTT-Topics auf frei konfigurierbare Variablen ab – **eine**
+Instanz für beliebig viele Topics, ohne dass für jedes Topic eine eigene
+native "MQTT Server Gerät"-Instanz nötig ist.
 
-## Architektur (v2 – wichtige Änderung gegenüber v1!)
+## Wichtiger Hinweis zur Schnittstellen-GUID
 
-v1 hing sich selbst als Splitter-Kind mit einer privaten, undokumentierten
-Interface-GUID unter den MQTT-Server/-Client und wertete `ReceiveData()` aus.
-Das war fragil und in dieser Symcon-Version bereits inkompatibel
-("Gateway ändern"-Fehler).
+Diese Version nutzt die Schnittstelle `{7F7632D9-FA40-4F38-8DEA-C83CD4325A32}`,
+bestätigt direkt aus einer laufenden IP-Symcon-Installation über:
 
-v2 verzichtet komplett darauf. Die Modul-Instanz selbst braucht **keinen**
-Eltern-Parent mehr und kann frei im Objektbaum stehen. Stattdessen legt sie
-für jede aktive Mapping-Zeile automatisch eine ganz normale, native
-**"MQTT Server Gerät"**-Instanz an (öffentliche Modul-ID
-`{01C00ADD-D04E-452E-B66A-D253278743FE}`, bestätigt durch Symcon-Entwickler
-paresy im Community-Forum), verbindet sie per `IPS_ConnectInstance()` mit dem
-von euch gewählten MQTT-Server/-Client und konfiguriert Topic/Type/Retain per
-`IPS_SetConfiguration()` – exakt das, was der native Konfigurator im
-Hintergrund auch macht, nur automatisiert aus eurer Tabelle heraus.
+```php
+$moduleID   = IPS_GetInstance($mqttServerInstanceID)['ModuleInfo']['ModuleID'];
+$moduleInfo = IPS_GetModule($moduleID);
+// $moduleInfo['ChildRequirements'] enthält die geforderte Schnittstelle
+```
 
-Diese Rohdaten-Geräte werden im Baum ausgeblendet. Auf Wertänderungen ihrer
-"Value"-Variable reagiert der Mapper über das offizielle, dokumentierte
-`RegisterMessage()`/`MessageSink()`-Mechanismus (statt über ein rohes
-Datenpaket), konvertiert den Payload nach Bedarf und schreibt ihn in die von
-euch konfigurierte, "schöne" Zielvariable.
+Diese GUID ist von Symcon nicht offiziell in der Doku veröffentlicht und kann
+sich theoretisch mit einem größeren Versionssprung wieder ändern. Solltet ihr
+nach einem IP-Symcon-Update erneut "inkompatibel" im Gateway-Dialog sehen,
+das Diagnose-Vorgehen oben wiederholen und die GUID in `module.json`
+(`parentRequirements`) sowie in `module.php`
+(`MODULE_MQTT_SERVER`-Konstante) entsprechend anpassen.
 
 ## Installation
 
-1. In IP-Symcon: **Kern Instanzen → Modules**, Repository-URL eintragen (oder
-   für lokale Installation ohne Git den kompletten Ordner nach
-   `/var/lib/symcon/modules/` kopieren).
+1. Ordner `MQTTGenericMapper` (mit `library.json` und Unterordner
+   `MQTTGenericMapper/`) nach `/var/lib/symcon/modules/` (bzw. euren
+   gemounteten Modulordner) kopieren.
 2. IP-Symcon Modulliste aktualisieren.
-3. Im Objektbaum: **+ → Instanz**, nach "MQTT Generic Mapper" suchen, anlegen.
-   Es erscheint diesmal **kein** "Gateway ändern"-Dialog mehr, da die Instanz
-   keinen Parent benötigt.
-4. Oben im Formular unter "MQTT-Server / -Client" die passende, bereits
-   bestehende Instanz auswählen (euren nativen MQTT-Server oder einen
-   MQTT-Client-Splitter).
+3. Im Objektbaum: **+ → Instanz**, nach "MQTT Generic Mapper" suchen,
+   anlegen. Als Parent sollte automatisch euer nativer MQTT-Server
+   vorgeschlagen bzw. verbunden werden.
 
 ## Nutzung
 
-### 1) Themen entdecken (optional)
-Button "Themen vom MQTT-Server/-Client abfragen" liest best-effort aus der
-Konfigurationsform der gewählten Instanz aus, welche Themen dort bereits
-gesehen wurden. Da dieses interne Format von Symcon nicht offiziell
-dokumentiert ist, kann es in Einzelfällen nichts liefern – dann einfach
-Themen manuell eintragen oder aus dem nativen MQTT-Konfigurator per
-Copy & Paste übernehmen (dort werden sie ja ohnehin bereits angezeigt, siehe
-euer Screenshot).
+### 1) Topics entdecken (optional)
+- "Lernmodus aktiv" anhaken, übernehmen.
+- Ein paar Sekunden bis Minuten warten (je nachdem, wie oft eure Geräte
+  publizieren).
+- Formular schließen und neu öffnen.
+- Gewünschte Zeilen markieren → "Ausgewählte Topics übernehmen", oder bei
+  vielen Topics (Victron) "Alle erkannten Topics übernehmen" und danach in
+  Ruhe aufräumen.
+- Lernmodus danach wieder ausschalten (spart Last bei Brokern mit sehr
+  vielen Topics).
 
 ### 2) Mapping-Tabelle
 Pro Zeile: Aktiv, MQTT Topic (inkl. Wildcards `+`/`#`), Ident, Name, Typ
-(Boolean/Integer/Float/String), Variablenprofil, Position, sowie:
-- **Konvertierung = Keine**: Payload wird 1:1 gemäß Typ interpretiert.
-- **Konvertierung = Datum/Zeit-String → UnixTimestamp**: Zielvariable wird
-  automatisch Integer mit Profil `~UnixTimestamp`. Feld "Datumsformat" leer
-  lassen für automatische Erkennung (`strtotime`, deckt ISO 8601 & Co ab),
-  oder ein PHP-Datumsformat angeben (z.B. `Y-m-d\TH:i:sP`).
-- **Konvertierung = Text-Status → Integer (Tabelle)**: Feld
-  `Textwert=Zahl;...` ausfüllen, z.B. `Bulk=0;Absorption=1;Float=2`. Dazu
-  passend ein eigenes Integer-Variablenprofil mit Assoziationen anlegen und im
-  Feld "Variablenprofil" eintragen. Unbekannte Textwerte ergeben `-1`.
+(Boolean/Integer/Float/String), Parser, Parser-Parameter, Variablenprofil,
+Position. Variablen werden automatisch angelegt/aktualisiert, sobald ein
+passendes Topic empfangen wird.
+
+**Parser** (zusätzlich zum Typ, für Rohwerte die nicht 1:1 in den Zieltyp
+passen). Das Feld **Parser-Parameter** bedeutet je nach gewähltem Parser
+etwas anderes:
+
+| Parser | Parser-Parameter | Beispiel |
+|---|---|---|
+| Keine (Rohwert) | – (leer) | einfache Umwandlung nur anhand des Typs, z.B. `"true"`/`"1"` → Boolean |
+| Zahl aus Text extrahieren | – (leer) | `"80%"` → `80`, `"33.5 A"` → `33.5` |
+| Datum/Zeit → Unix-Timestamp | optionaler PHP-Formatstring | `"Y-m-d H:i:s"`, leer = automatische Erkennung via `strtotime()` |
+| Enum-Zuordnung (Text → Zahl) | `Label=Zahl` Paare, komma- oder zeilengetrennt | `"Offline=0,Online=1,undefined=-1"` |
+| JSON-Feld extrahieren | Punkt-Pfad in den JSON-Payload | `"battery.soc"`, `"devices.0.voltage"` |
+| Skalierung (Faktor/Offset) | `Faktor,Offset` | `"0.1,0"` wandelt `235` in `23.5` um |
+| Millisekunden → Sekunden | – (leer) | für Unix-Timestamps in ms |
+
+**Enum-Zuordnung im Detail:** Trifft ein bisher unbekannter Text-Wert ein
+(z.B. ein neuer Status-String, den ihr noch nicht in der Liste habt), wird
+er automatisch mit der nächsten freien Zahl ergänzt und direkt in das
+Parser-Parameter-Feld dieser Mapping-Zeile zurückgeschrieben – beim nächsten
+Öffnen des Formulars steht er dann schon drin. Bei Bedarf die
+automatisch vergebene Zahl im Formular manuell anpassen.
+
+Bei "Datum/Zeit", "Enum-Zuordnung" und "Millisekunden → Sekunden" den Typ auf
+**Integer** stellen, bei "Skalierung" i.d.R. auf **Float**. Fürs
+Timestamp-Profil bietet sich das eingebaute `~UnixTimestamp` an, damit
+IP-Symcon den Wert als Datum/Zeit darstellt statt als nackte Zahl.
+
+### 3) Debug-Meldungen
+Checkbox oben im Formular schaltet ausführliches Logging ein (empfangene
+Topics, Mapping-Treffer, gesetzte Werte, Fehler, automatisch ergänzte
+Enum-Werte) – sichtbar im Debug-Panel der Instanz in der Konsole (nicht im
+globalen Meldungslog, um dieses nicht zuzumüllen).
 
 ### 3) Import / Export
-Wie gehabt: Export-Button gibt die aktuelle Mapping-Liste als JSON aus, Import
-ersetzt die komplette Liste (mit Sicherheitsabfrage) – praktisch bei
-mehreren hundert Victron-Topics, um eine Vorlage zu sichern oder zu teilen.
+Export-Button gibt die aktuelle Mapping-Liste als JSON zum Kopieren aus;
+Import ersetzt die komplette Liste (mit Sicherheitsabfrage).
 
-## Bekannte Grenzen / mögliche Erweiterungen
+### 4) Performance-Feintuning
+Optionaler Regex-Vorfilter (`ReceiveDataFilter`) für Broker mit sehr vielen
+Topics. Die eigentliche Zuordnung läuft davon unabhängig immer über die
+Mapping-Liste.
 
-- Reines Auslesen (Broker → Symcon-Variable). Rückschreiben (Symcon → MQTT
-  Publish) ist nicht implementiert, ließe sich aber ergänzen, indem man beim
-  `RequestAction()` der Zielvariable den Wert an die zugehörige native
-  "Value"-Variable des Rohdaten-Geräts weiterreicht (`RequestAction()` dort
-  publiziert automatisch).
-- Die Themen-Erkennung ist best-effort (siehe oben) und kein offiziell
-  garantierter API-Vertrag.
-- JSON-verschachtelte Payloads (ein komplettes Objekt in einem Topic) landen
-  aktuell als kompletter String; ein zusätzliches "JSON-Pfad"-Feld zum
-  Herauspicken einzelner Unterfelder wäre ein sinnvoller nächster Ausbauschritt.
+## Bekannte Grenzen
+
+- Reines Auslesen (Broker → Symcon-Variable), kein Rückschreiben. Ließe sich
+  über `RequestAction()` + `SendDataToParent()` ergänzen.
+- Variablenprofile werden nur referenziert, nicht automatisch angelegt.
+- Verschachtelte JSON-Payloads landen komplett als String in einer Variable;
+  ein "JSON-Pfad"-Feld pro Mapping wäre der nächste sinnvolle Ausbauschritt,
+  falls gewünscht.
