@@ -64,6 +64,7 @@ etwas anderes:
 | JSON-Feld extrahieren | Punkt-Pfad in den JSON-Payload | `"battery.soc"`, `"devices.0.voltage"` |
 | Skalierung (Faktor/Offset) | `Faktor,Offset` | `"0.1,0"` wandelt `235` in `23.5` um |
 | Millisekunden → Sekunden | – (leer) | für Unix-Timestamps in ms |
+| Dauer H:MM:SS.ffffff → Sekunden | – (leer) | `"0:05:06.932660"` → `306.93266` (Python-timedelta-Format, auch mehrstellige Stunden) |
 
 **Enum-Zuordnung im Detail:** Trifft ein bisher unbekannter Text-Wert ein
 (z.B. ein neuer Status-String, den ihr noch nicht in der Liste habt), wird

@@ -96,6 +96,10 @@
             "caption": "• Skalierung: \"Faktor,Offset\", z.B. \"0.1,0\" wandelt einen Rohwert von 235 in 23.5 um. Typ auf Float stellen."
         },
         {
+            "type": "Label",
+            "caption": "• Dauer H:MM:SS.ffffff -> Sekunden: für Intervall-/Dauer-Strings wie \"0:05:06.932660\" (z.B. Python timedelta). Parser-Parameter bleibt leer. Typ auf Float stellen."
+        },
+        {
             "type": "List",
             "name": "Mappings",
             "caption": "2) Topic → Variablen Mapping",
@@ -201,6 +205,10 @@
                             {
                                 "caption": "Millisekunden -> Sekunden",
                                 "value": 6
+                            },
+                            {
+                                "caption": "Dauer H:MM:SS.ffffff -> Sekunden",
+                                "value": 7
                             }
                         ]
                     }

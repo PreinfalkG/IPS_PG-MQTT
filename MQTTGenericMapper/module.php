@@ -16,6 +16,7 @@ class MQTTGenericMapper extends IPSModule
     private const PARSER_JSONPATH  = 4; // Feld aus einem JSON-Payload extrahieren (Punkt-Pfad)
     private const PARSER_SCALE     = 5; // numerischer Rohwert * Faktor + Offset
     private const PARSER_MS_TO_S   = 6; // Unix-Millisekunden -> Sekunden
+    private const PARSER_DURATION  = 7; // Dauer-String "H:MM:SS.ffffff" -> Sekunden (float)    
 
     public function Create()
     {
@@ -368,6 +369,9 @@ class MQTTGenericMapper extends IPSModule
             case self::PARSER_MS_TO_S:
                 return intdiv((int) $payload, 1000);
 
+            case self::PARSER_DURATION:
+                return $this->parseDurationToSeconds($payload);                
+
             default: // PARSER_NONE
                 switch ($varType) {
                     case 0:
@@ -466,6 +470,25 @@ class MQTTGenericMapper extends IPSModule
         $factor = isset($parts[0]) && is_numeric($parts[0]) ? (float) $parts[0] : 1.0;
         $offset = isset($parts[1]) && is_numeric($parts[1]) ? (float) $parts[1] : 0.0;
         return [$factor, $offset];
+    }
+
+    /**
+     * Wandelt einen Dauer-String im Format "[-]H:MM:SS[.ffffff]" (z.B. Python-timedelta-Ausgabe
+     * wie "0:05:06.932660") in eine Sekunden-Fließkommazahl um. Stunden duerfen mehrstellig sein.
+     */
+    private function parseDurationToSeconds(string $payload): float
+    {
+        if (preg_match('/^(-)?(\d+):(\d{2}):(\d{2})(?:\.(\d+))?$/', trim($payload), $matches)) {
+            $sign     = $matches[1] === '-' ? -1 : 1;
+            $hours    = (int) $matches[2];
+            $minutes  = (int) $matches[3];
+            $seconds  = (int) $matches[4];
+            $fraction = isset($matches[5]) ? (float) ('0.' . $matches[5]) : 0.0;
+
+            return $sign * ($hours * 3600 + $minutes * 60 + $seconds + $fraction);
+        }
+
+        return 0.0;
     }
 
     private function applyPayload(int $varID, int $varType, $value): void
