@@ -27,9 +27,18 @@
                     "delete": false,
                     "columns": [
                         {
+                            "caption": "Übernehmen",
+                            "name": "Selected",
+                            "width": "100px",
+                            "add": false,
+                            "edit": {
+                                "type": "CheckBox"
+                            }
+                        },
+                        {
                             "caption": "Topic",
                             "name": "Topic",
-                            "width": "420px"
+                            "width": "400px"
                         },
                         {
                             "caption": "Letzter Payload",
@@ -50,7 +59,7 @@
                         {
                             "type": "Button",
                             "caption": "Ausgewählte Topics übernehmen",
-                            "onClick": "MQTTMAP_AddSelectedTopics($id, $DiscoveredList);"
+                            "onClick": "MQTTMAP_AddSelectedTopics($id, json_encode($DiscoveredList));"
                         },
                         {
                             "type": "Button",

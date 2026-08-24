@@ -99,22 +99,27 @@ class MQTTGenericMapper extends IPSModule
     // Oeffentliche Funktionen, die vom Konfigurationsformular aufgerufen werden
     // ---------------------------------------------------------------
 
-    public function AddSelectedTopics($SelectedRows)
+    public function AddSelectedTopics(string $SelectedRowsJSON)
     {
-        $rows     = $this->toArray($SelectedRows);
+        $rows     = $this->toArray(json_decode($SelectedRowsJSON));
         $mappings = $this->getMappings();
         $existing = array_column($mappings, 'Topic');
+        $added    = 0;
 
         foreach ($rows as $row) {
             $row = $this->toArray($row);
+            if (!($row['Selected'] ?? false)) {
+                continue;
+            }
             if (!isset($row['Topic']) || in_array($row['Topic'], $existing, true)) {
                 continue;
             }
             $mappings[] = $this->buildMappingFromTopic($row['Topic']);
             $existing[] = $row['Topic'];
+            $added++;
         }
 
-        $this->debug('AddSelectedTopics: ' . count($rows) . ' Zeile(n) uebergeben, Mapping-Liste jetzt ' . count($mappings) . ' Eintrag/Eintraege');
+        $this->debug('AddSelectedTopics: ' . count($rows) . ' Zeile(n) im Formular, ' . $added . ' davon ausgewählt und uebernommen');
         $this->saveMappings($mappings);
         $this->ReloadForm();
     }
@@ -178,6 +183,10 @@ class MQTTGenericMapper extends IPSModule
 
         $discovered = json_decode($this->ReadAttributeString('DiscoveredTopicsCache'), true) ?: [];
         usort($discovered, fn ($a, $b) => strcmp($b['LastSeen'], $a['LastSeen']));
+        foreach ($discovered as &$entry) {
+            $entry['Selected'] = false;
+        }
+        unset($entry);
 
         $this->injectListValues($form['elements'], 'DiscoveredList', $discovered);
 
